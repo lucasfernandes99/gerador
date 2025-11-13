@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Gerador de QR Codes - Festa</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 <style>
   body { font-family: Arial; margin: 20px; background: #f5f5f5; }
@@ -12,58 +13,86 @@
 </style>
 </head>
 <body>
-<h1>🎉 Gerador de QR Code - Festa</h1>
+<h1>🎉 Gerador de QR Codes - Festa</h1>
 
-<label>Nome da Família:</label><br>
-<input type="text" id="nome" placeholder="Ex: Família Silva"><br>
-<label>Número de convidados:</label><br>
-<input type="number" id="qtd" min="1" value="1"><br>
-<button onclick="adicionar()">Adicionar Família</button>
+<input type="file" id="arquivoExcel" accept=".xlsx">
 <button onclick="exportar()">Exportar Dados (.json)</button>
+<button onclick="limpar()">Limpar Tudo</button>
 
 <h2>Famílias Cadastradas:</h2>
 <div id="lista"></div>
 
 <script>
-let familias = [];
-let contador = 1;
+let familias = JSON.parse(localStorage.getItem('familias')) || {};
 
-function adicionar() {
-  const nome = document.getElementById('nome').value.trim();
-  const qtd = parseInt(document.getElementById('qtd').value);
-  if (!nome || qtd < 1) { alert('Preencha todos os campos.'); return; }
-
-  const id = 'FAM' + String(contador).padStart(3, '0');
-  contador++;
-
-  familias.push({ id, nome, qtd, entrou: false });
-  atualizarLista();
-  gerarQRCode(id, nome, qtd);
-  document.getElementById('nome').value = '';
-  document.getElementById('qtd').value = 1;
+// Função hash simples baseada no nome (mantém QR estável)
+function gerarID(nome) {
+  let hash = 0;
+  for (let i = 0; i < nome.length; i++) {
+    hash = nome.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return 'FAM' + Math.abs(hash).toString().padStart(6, '0');
 }
 
-function gerarQRCode(id, nome, qtd) {
-  const qr = new QRious({ value: id, size: 150 });
-  const div = document.createElement('div');
-  div.className = 'familia';
-  div.innerHTML = `<strong>${nome}</strong><br>${qtd} convidados<br><img src="${qr.toDataURL()}"><br>ID: ${id}`;
-  document.getElementById('lista').appendChild(div);
-}
+document.getElementById('arquivoExcel').addEventListener('change', function(e) {
+  const arquivo = e.target.files[0];
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const data = new Uint8Array(evt.target.result);
+    const workbook = XLSX.read(data, {type: 'array'});
+    const primeira = workbook.SheetNames[0];
+    const planilha = XLSX.utils.sheet_to_json(workbook.Sheets[primeira]);
+
+    planilha.forEach(linha => {
+      const nome = linha['Nome da Família']?.trim();
+      const qtd = parseInt(linha['Convidados']);
+      if (!nome || !qtd) return;
+
+      const id = gerarID(nome);
+      if (!familias[id]) {
+        familias[id] = { id, nome, qtd, entrou: false };
+      } else {
+        // Atualiza número de convidados caso mude, mas mantém ID
+        familias[id].qtd = qtd;
+      }
+    });
+
+    localStorage.setItem('familias', JSON.stringify(familias));
+    atualizarLista();
+    alert('Planilha importada com sucesso!');
+  };
+  reader.readAsArrayBuffer(arquivo);
+});
 
 function atualizarLista() {
-  document.getElementById('lista').innerHTML = '';
-  familias.forEach(f => gerarQRCode(f.id, f.nome, f.qtd));
+  const container = document.getElementById('lista');
+  container.innerHTML = '';
+  Object.values(familias).forEach(f => {
+    const qr = new QRious({ value: f.id, size: 150 });
+    const div = document.createElement('div');
+    div.className = 'familia';
+    div.innerHTML = `<strong>${f.nome}</strong><br>${f.qtd} convidados<br><img src="${qr.toDataURL()}"><br>ID: ${f.id}`;
+    container.appendChild(div);
+  });
 }
 
 function exportar() {
-  if (familias.length === 0) { alert('Nenhuma família cadastrada.'); return; }
-  const blob = new Blob([JSON.stringify(familias, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(Object.values(familias), null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'familias.json';
   a.click();
 }
+
+function limpar() {
+  if (confirm('Tem certeza que deseja apagar tudo?')) {
+    familias = {};
+    localStorage.removeItem('familias');
+    document.getElementById('lista').innerHTML = '';
+  }
+}
+
+window.onload = atualizarLista;
 </script>
 </body>
 </html>
