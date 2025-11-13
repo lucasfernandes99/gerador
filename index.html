@@ -12,15 +12,51 @@
   body {
     font-family: Arial, sans-serif;
     text-align: center;
-    margin: 20px;
+    margin: 0;
     background: #f7f7f7;
   }
-  h1 { color: #333; }
+  h1 {
+    background: #007bff;
+    color: white;
+    padding: 15px;
+    margin: 0;
+  }
+  .botoes {
+    margin: 15px;
+  }
+  button {
+    margin: 5px;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 6px;
+    background: #007bff;
+    color: white;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  button:hover { background: #0056b3; }
+  #status {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 15px 0;
+  }
+  .card {
+    color: white;
+    padding: 10px 20px;
+    border-radius: 10px;
+    min-width: 100px;
+  }
+  .gerados { background: #28a745; }
+  .atualizados { background: #007bff; }
+  .total { background: #6c757d; }
   #qrcodes {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 15px;
+    margin-bottom: 40px;
   }
   .qr-item {
     background: #fff;
@@ -31,64 +67,92 @@
     font-size: 14px;
     width: 150px;
   }
-  button {
-    margin: 10px;
-    padding: 10px 15px;
-    border: none;
-    border-radius: 6px;
-    background: #007bff;
-    color: white;
-    font-size: 1rem;
-    cursor: pointer;
-  }
-  button:hover { background: #0056b3; }
 </style>
 </head>
 <body>
-<h1>🎉 Gerador de QR Codes - Festa</h1>
-<input type="file" id="excelFile" accept=".xlsx">
-<div>
-  <button onclick="gerarQRCodes()">Gerar QR Codes</button>
-  <button onclick="baixarJSON()">Baixar Lista (.json)</button>
-  <button onclick="exportarJPEGs()">📸 Exportar QR Codes em JPEG</button>
+<h1>🎉 Gerador de QR Codes - Controle de Festa</h1>
+
+<div class="botoes">
+  <input type="file" id="excelFile" accept=".xlsx">
+  <button onclick="gerarQRCodes()">Gerar / Atualizar</button>
+  <button onclick="atualizarSemArquivo()">🔁 Atualizar lista</button>
+  <button onclick="recriarTodos()">♻️ Recriar Todos</button>
+  <button onclick="exportarJPEGs()">📸 Exportar JPEGs</button>
+  <button onclick="baixarJSON()">💾 Baixar JSON</button>
 </div>
+
+<div id="status">
+  <div class="card gerados" id="gerados">Gerados: 0</div>
+  <div class="card atualizados" id="atualizados">Atualizados: 0</div>
+  <div class="card total" id="total">Total: 0</div>
+</div>
+
 <div id="qrcodes"></div>
 
 <script>
-let familias = [];
-let qrCodesGerados = [];
+let familias = JSON.parse(localStorage.getItem('familias')) || [];
+let ultimaPlanilha = null;
 
 document.getElementById('excelFile').addEventListener('change', lerPlanilha);
 
 function lerPlanilha(event) {
   const file = event.target.files[0];
   if (!file) return alert("Selecione um arquivo Excel!");
+  ultimaPlanilha = file;
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = e => {
     const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, {type: 'array'});
+    const workbook = XLSX.read(data, { type: 'array' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json(sheet);
-
-    familias = json.map((f, i) => ({
-      id: f["Nome da Família"].replace(/\s+/g, '_').toUpperCase(),
-      nome: f["Nome da Família"],
-      adultos: f["Adultos"] || 0,
-      criancas: f["Crianças"] || 0,
-      entrou: false
-    }));
-
-    alert("✅ Planilha carregada com sucesso!");
+    atualizarLista(json);
   };
   reader.readAsArrayBuffer(file);
 }
 
+function atualizarLista(json) {
+  const antigas = new Map(familias.map(f => [f.id, f]));
+  let gerados = 0, atualizados = 0;
+
+  json.forEach(f => {
+    const id = f["Nome da Família"].replace(/\s+/g, '_').toUpperCase();
+    const existente = antigas.get(id);
+
+    if (existente) {
+      existente.adultos = f["Adultos"] || existente.adultos;
+      existente.criancas = f["Crianças"] || existente.criancas;
+      atualizados++;
+    } else {
+      familias.push({
+        id,
+        nome: f["Nome da Família"],
+        adultos: f["Adultos"] || 0,
+        criancas: f["Crianças"] || 0,
+        entrou: false
+      });
+      gerados++;
+    }
+  });
+
+  localStorage.setItem('familias', JSON.stringify(familias));
+  exibirQRCodes();
+  atualizarStatus(gerados, atualizados);
+}
+
+function atualizarSemArquivo() {
+  if (!ultimaPlanilha) return alert("Nenhuma planilha carregada ainda!");
+  lerPlanilha({ target: { files: [ultimaPlanilha] } });
+}
+
 function gerarQRCodes() {
-  if (!familias.length) return alert("Carregue uma planilha primeiro!");
+  const file = document.getElementById('excelFile').files[0];
+  if (!file) return alert("Selecione uma planilha para gerar QR Codes!");
+  lerPlanilha({ target: { files: [file] } });
+}
+
+function exibirQRCodes() {
   const container = document.getElementById("qrcodes");
   container.innerHTML = "";
-  qrCodesGerados = [];
-
   familias.forEach(f => {
     const div = document.createElement("div");
     div.className = "qr-item";
@@ -98,19 +162,17 @@ function gerarQRCodes() {
     div.appendChild(label);
 
     const qrDiv = document.createElement("div");
+    new QRCode(qrDiv, { text: f.id, width: 128, height: 128 });
     div.appendChild(qrDiv);
-
-    const qr = new QRCode(qrDiv, {
-      text: f.id,
-      width: 128,
-      height: 128
-    });
-
     container.appendChild(div);
-    qrCodesGerados.push({ nome: f.nome, id: f.id, div: qrDiv });
   });
+  atualizarStatus(0, 0);
+}
 
-  alert("🎟️ QR Codes gerados com sucesso!");
+function atualizarStatus(gerados, atualizados) {
+  document.getElementById("gerados").innerText = `Gerados: ${gerados}`;
+  document.getElementById("atualizados").innerText = `Atualizados: ${atualizados}`;
+  document.getElementById("total").innerText = `Total: ${familias.length}`;
 }
 
 function baixarJSON() {
@@ -120,23 +182,30 @@ function baixarJSON() {
 }
 
 async function exportarJPEGs() {
-  if (!qrCodesGerados.length) return alert("Gere os QR Codes antes de exportar!");
+  if (!familias.length) return alert("Gere os QR Codes antes de exportar!");
   const zip = new JSZip();
-
-  for (let i = 0; i < qrCodesGerados.length; i++) {
-    const { nome, div } = qrCodesGerados[i];
-    const canvas = div.querySelector("canvas");
-    if (canvas) {
-      const dataURL = canvas.toDataURL("image/jpeg");
-      const base64 = dataURL.split(",")[1];
-      zip.file(`${nome.replace(/\s+/g, '_')}.jpeg`, base64, { base64: true });
-    }
-  }
-
+  const qrDivs = document.querySelectorAll(".qr-item div canvas");
+  qrDivs.forEach((canvas, i) => {
+    const nome = familias[i].nome.replace(/\s+/g, '_');
+    const dataURL = canvas.toDataURL("image/jpeg");
+    const base64 = dataURL.split(",")[1];
+    zip.file(`${nome}.jpeg`, base64, { base64: true });
+  });
   const blob = await zip.generateAsync({ type: "blob" });
   saveAs(blob, "QRCodes_Festa.zip");
-  alert("📦 Todos os QR Codes foram exportados em JPEG com sucesso!");
+  alert("📦 QR Codes exportados com sucesso!");
 }
+
+function recriarTodos() {
+  if (!confirm("Tem certeza que deseja recriar todos os QR Codes do zero?")) return;
+  localStorage.removeItem('familias');
+  familias = [];
+  document.getElementById("qrcodes").innerHTML = "";
+  atualizarStatus(0, 0);
+  alert("✅ Todos os QR Codes foram apagados. Importe a planilha novamente.");
+}
+
+window.onload = exibirQRCodes;
 </script>
 </body>
 </html>
