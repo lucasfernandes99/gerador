@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Gerador de QR Codes - Festa</title>
+<title>Gerador de QR Codes - Festa (Atualizado)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 <style>
@@ -10,10 +10,16 @@
   h1 { text-align: center; }
   input, button { margin: 5px; padding: 8px; }
   .familia { background: #fff; padding: 10px; margin: 10px 0; border-radius: 8px; }
+  #log { background: #eef; padding: 10px; border-radius: 6px; margin-top:10px; }
 </style>
 </head>
 <body>
-<h1>🎉 Gerador de QR Code - Festa</h1>
+<h1>🎉 Gerador de QR Code - Festa (Atualizado)</h1>
+
+<p>
+  <strong>Planilha (.xlsx)</strong> com colunas obrigatórias: <em>Nome da Família</em>, <em>Adultos</em>, <em>Crianças</em>.<br>
+  Coluna opcional: <em>ID</em> (ex: FAM001) — se presente, será usada como ID estável.
+</p>
 
 <input type="file" id="arquivoExcel" accept=".xlsx">
 <button onclick="exportar()">Exportar Dados (.json)</button>
@@ -22,61 +28,149 @@
 <h2>Famílias Cadastradas:</h2>
 <div id="lista"></div>
 
+<div id="log" style="display:none"></div>
+
 <script>
+/* -------------------------
+   UTILITÁRIOS
+   -------------------------*/
+
+// Recupera/guarda no localStorage
 let familias = JSON.parse(localStorage.getItem('familias')) || {};
 
-function gerarID(nome) {
-  let hash = 0;
-  for (let i = 0; i < nome.length; i++) {
-    hash = nome.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return 'FAM' + Math.abs(hash).toString().padStart(6, '0');
+// Normaliza nome: trim, múltiplos espaços -> 1, remove acentos, toLowerCase
+function normalizeName(nome) {
+  if (!nome) return '';
+  // trim and collapse spaces
+  let s = nome.trim().replace(/\s+/g, ' ');
+  // remove diacritics (acentos)
+  s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return s.toLowerCase();
 }
+
+// Gera ID a partir de string (hash simples) e garante prefixo FAM
+function hashToId(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    hash = hash | 0;
+  }
+  const abs = Math.abs(hash);
+  const id = 'FAM' + String(abs).padStart(6, '0');
+  return id;
+}
+
+// Encontra uma família existente por ID ou por nome normalizado
+function findExisting(normalizedName, providedId) {
+  if (providedId && familias[providedId]) return providedId;
+
+  // pesquisa por normalizedName em familias
+  for (const id in familias) {
+    const f = familias[id];
+    if (f._normalizedName && f._normalizedName === normalizedName) {
+      return id;
+    }
+  }
+  return null;
+}
+
+/* -------------------------
+   IMPORTAÇÃO DE PLANILHA
+   -------------------------*/
 
 document.getElementById('arquivoExcel').addEventListener('change', function(e) {
   const arquivo = e.target.files[0];
+  if (!arquivo) return;
   const reader = new FileReader();
   reader.onload = function(evt) {
-    const data = new Uint8Array(evt.target.result);
-    const workbook = XLSX.read(data, {type: 'array'});
-    const planilha = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, {type: 'array'});
+      const sheetName = workbook.SheetNames[0];
+      const planilha = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
-    planilha.forEach(linha => {
-      const nome = linha['Nome da Família']?.trim();
-      const adultos = parseInt(linha['Adultos']);
-      const criancas = parseInt(linha['Crianças']);
-      if (!nome || isNaN(adultos) || isNaN(criancas)) return;
+      let added = 0, updated = 0, skipped = 0;
+      planilha.forEach(linha => {
+        // Aceita colunas com nomes ligeiramente diferentes: tentar várias opções
+        const rawName = linha['Nome da Família'] ?? linha['Nome'] ?? linha['Familia'] ?? linha['Family'];
+        const adultosRaw = linha['Adultos'] ?? linha['Adults'] ?? linha['adultos'];
+        const criancasRaw = linha['Crianças'] ?? linha['Criancas'] ?? linha['Children'] ?? linha['criancas'];
+        const providedId = linha['ID'] ?? linha['Id'] ?? linha['id'];
 
-      const id = gerarID(nome);
-      if (!familias[id]) {
-        familias[id] = { id, nome, adultos, criancas, entrou: false };
-      } else {
-        familias[id].adultos = adultos;
-        familias[id].criancas = criancas;
-      }
-    });
+        const nome = (typeof rawName === 'string') ? rawName.trim() : '';
+        const adultos = parseInt(adultosRaw);
+        const criancas = parseInt(criancasRaw);
 
-    localStorage.setItem('familias', JSON.stringify(familias));
-    atualizarLista();
-    alert('Planilha importada com sucesso!');
+        if (!nome || isNaN(adultos) || isNaN(criancas)) { skipped++; return; }
+
+        const normalized = normalizeName(nome);
+        // Decide ID: usa ID fornecido se houver, senão hash da normalized
+        const candidateId = providedId ? String(providedId).trim() : hashToId(normalized);
+        // Tenta encontrar correspondência por ID ou por normalized name
+        const existingId = findExisting(normalized, candidateId);
+
+        if (existingId) {
+          // atualizar mantendo entrou
+          familias[existingId].nome = nome; // atualiza para o nome atual (formatação original)
+          familias[existingId].adultos = adultos;
+          familias[existingId].criancas = criancas;
+          familias[existingId]._normalizedName = normalized;
+          updated++;
+        } else {
+          // cria nova entrada
+          const newId = candidateId;
+          familias[newId] = {
+            id: newId,
+            nome: nome,
+            adultos: adultos,
+            criancas: criancas,
+            entrou: false,
+            _normalizedName: normalized
+          };
+          added++;
+        }
+      });
+
+      localStorage.setItem('familias', JSON.stringify(familias));
+      atualizarLista();
+      mostrarLog(added, updated, skipped);
+      alert(`Importação concluída. Adicionadas: ${added}, Atualizadas: ${updated}, Ignoradas/Inválidas: ${skipped}`);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao processar a planilha. Verifique se é um .xlsx válido e tem as colunas corretas.');
+    }
   };
   reader.readAsArrayBuffer(arquivo);
 });
 
+/* -------------------------
+   UI / Lista / Export / Limpar
+   -------------------------*/
+
 function atualizarLista() {
   const container = document.getElementById('lista');
   container.innerHTML = '';
-  Object.values(familias).forEach(f => {
+  // ordenar por nome para facilitar
+  const lista = Object.values(familias).sort((a,b) => a.nome.localeCompare(b.nome));
+  lista.forEach(f => {
     const qr = new QRious({ value: f.id, size: 150 });
     const div = document.createElement('div');
     div.className = 'familia';
-    div.innerHTML = `<strong>${f.nome}</strong><br>${f.adultos} adultos e ${f.criancas} crianças<br><img src="${qr.toDataURL()}"><br>ID: ${f.id}`;
+    div.innerHTML = `<strong>${f.nome}</strong><br>
+                     ${f.adultos} adultos e ${f.criancas} crianças<br>
+                     <img src="${qr.toDataURL()}" alt="QR"><br>
+                     ID: ${f.id} ${f.entrou ? '<span style="color:green"> (já entrou)</span>' : ''}`;
     container.appendChild(div);
   });
 }
 
 function exportar() {
-  const blob = new Blob([JSON.stringify(Object.values(familias), null, 2)], { type: 'application/json' });
+  const arr = Object.values(familias).map(f => {
+    // não incluir campo _normalizedName no export final
+    const { _normalizedName, ...rest } = f;
+    return rest;
+  });
+  const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'familias.json';
@@ -84,13 +178,25 @@ function exportar() {
 }
 
 function limpar() {
-  if (confirm('Tem certeza que deseja apagar tudo?')) {
+  if (confirm('Tem certeza que deseja apagar tudo? Isso removerá o histórico local (IDs e marcações de entrada).')) {
     familias = {};
     localStorage.removeItem('familias');
     document.getElementById('lista').innerHTML = '';
+    document.getElementById('log').style.display = 'none';
   }
 }
 
+function mostrarLog(added, updated, skipped) {
+  const log = document.getElementById('log');
+  log.style.display = 'block';
+  log.innerHTML = `<strong>Resumo da importação</strong><br>
+                   Adicionadas: ${added} <br>
+                   Atualizadas: ${updated} <br>
+                   Ignoradas/Inválidas: ${skipped} <br>
+                   Dica: se quiser forçar um ID específico para uma família, adicione a coluna "ID" na planilha (ex: FAM001).`;
+}
+
+/* Ao carregar a página mostra lista atual */
 window.onload = atualizarLista;
 </script>
 </body>
