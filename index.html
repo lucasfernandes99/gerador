@@ -13,7 +13,7 @@
 </style>
 </head>
 <body>
-<h1>🎉 Gerador de QR Codes - Festa</h1>
+<h1>🎉 Gerador de QR Code - Festa</h1>
 
 <input type="file" id="arquivoExcel" accept=".xlsx">
 <button onclick="exportar()">Exportar Dados (.json)</button>
@@ -25,7 +25,6 @@
 <script>
 let familias = JSON.parse(localStorage.getItem('familias')) || {};
 
-// Função hash simples baseada no nome (mantém QR estável)
 function gerarID(nome) {
   let hash = 0;
   for (let i = 0; i < nome.length; i++) {
@@ -40,20 +39,20 @@ document.getElementById('arquivoExcel').addEventListener('change', function(e) {
   reader.onload = function(evt) {
     const data = new Uint8Array(evt.target.result);
     const workbook = XLSX.read(data, {type: 'array'});
-    const primeira = workbook.SheetNames[0];
-    const planilha = XLSX.utils.sheet_to_json(workbook.Sheets[primeira]);
+    const planilha = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
     planilha.forEach(linha => {
       const nome = linha['Nome da Família']?.trim();
-      const qtd = parseInt(linha['Convidados']);
-      if (!nome || !qtd) return;
+      const adultos = parseInt(linha['Adultos']);
+      const criancas = parseInt(linha['Crianças']);
+      if (!nome || isNaN(adultos) || isNaN(criancas)) return;
 
       const id = gerarID(nome);
       if (!familias[id]) {
-        familias[id] = { id, nome, qtd, entrou: false };
+        familias[id] = { id, nome, adultos, criancas, entrou: false };
       } else {
-        // Atualiza número de convidados caso mude, mas mantém ID
-        familias[id].qtd = qtd;
+        familias[id].adultos = adultos;
+        familias[id].criancas = criancas;
       }
     });
 
@@ -71,7 +70,7 @@ function atualizarLista() {
     const qr = new QRious({ value: f.id, size: 150 });
     const div = document.createElement('div');
     div.className = 'familia';
-    div.innerHTML = `<strong>${f.nome}</strong><br>${f.qtd} convidados<br><img src="${qr.toDataURL()}"><br>ID: ${f.id}`;
+    div.innerHTML = `<strong>${f.nome}</strong><br>${f.adultos} adultos e ${f.criancas} crianças<br><img src="${qr.toDataURL()}"><br>ID: ${f.id}`;
     container.appendChild(div);
   });
 }
