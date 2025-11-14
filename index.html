@@ -4,208 +4,307 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gerador de QR Codes - Controle de Festa</title>
+
+<!-- LIBS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    text-align: center;
-    margin: 0;
-    background: #f7f7f7;
-  }
-  h1 {
-    background: #007bff;
-    color: white;
-    padding: 15px;
-    margin: 0;
-  }
-  .botoes {
-    margin: 15px;
-  }
-  button {
-    margin: 5px;
-    padding: 10px 14px;
-    border: none;
-    border-radius: 6px;
-    background: #007bff;
-    color: white;
-    font-size: 1rem;
-    cursor: pointer;
-  }
-  button:hover { background: #0056b3; }
-  #status {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin: 15px 0;
-  }
-  .card {
-    color: white;
-    padding: 10px 20px;
-    border-radius: 10px;
-    min-width: 100px;
-  }
-  .gerados { background: #28a745; }
-  .atualizados { background: #007bff; }
-  .total { background: #6c757d; }
-  #qrcodes {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 15px;
-    margin-bottom: 40px;
-  }
-  .qr-item {
-    background: #fff;
-    padding: 10px;
-    border-radius: 10px;
-    box-shadow: 0 0 5px rgba(0,0,0,0.2);
-    text-align: center;
-    font-size: 14px;
-    width: 150px;
-  }
+    body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin: 0;
+        background: #f7f7f7;
+    }
+    h1 {
+        background: #007bff;
+        color: white;
+        padding: 15px;
+        margin: 0;
+    }
+    .botoes {
+        margin: 15px;
+    }
+    button {
+        margin: 5px;
+        padding: 10px 14px;
+        border: none;
+        border-radius: 6px;
+        background: #007bff;
+        color: white;
+        font-size: 1rem;
+        cursor: pointer;
+    }
+    button:hover { background: #0056b3; }
+
+    #status {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 15px 0;
+    }
+    .card {
+        color: white;
+        padding: 10px 20px;
+        border-radius: 10px;
+        min-width: 100px;
+    }
+    .gerados { background: #28a745; }
+    .atualizados { background: #007bff; }
+    .total { background: #6c757d; }
+
+    #qrcodes {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 15px;
+        margin-bottom: 40px;
+    }
+    .qr-item {
+        background: #fff;
+        padding: 10px;
+        border-radius: 10px;
+        box-shadow: 0 0 5px rgba(0,0,0,0.2);
+        text-align: center;
+        font-size: 14px;
+        width: 150px;
+    }
 </style>
 </head>
 <body>
+
 <h1>🎉 Gerador de QR Codes - Controle de Festa</h1>
 
 <div class="botoes">
-  <input type="file" id="excelFile" accept=".xlsx">
-  <button onclick="gerarQRCodes()">Gerar / Atualizar</button>
-  <button onclick="atualizarSemArquivo()">🔁 Atualizar lista</button>
-  <button onclick="recriarTodos()">♻️ Recriar Todos</button>
-  <button onclick="exportarJPEGs()">📸 Exportar JPEGs</button>
-  <button onclick="baixarJSON()">💾 Baixar JSON</button>
+    <input type="file" id="excelFile" accept=".xlsx">
+    <button onclick="gerarQRCodes()">Gerar / Atualizar</button>
+    <button onclick="atualizarSemArquivo()">🔁 Atualizar lista</button>
+    <button onclick="recriarTodos()">♻️ Recriar Todos</button>
+    <button onclick="exportarJPEGs()">📸 Exportar QR Codes</button>
+    <button onclick="baixarJSON()">💾 Baixar JSON</button>
+    <button onclick="exportarConvites()">🎨 Exportar Convites com QR Code</button>
 </div>
 
 <div id="status">
-  <div class="card gerados" id="gerados">Gerados: 0</div>
-  <div class="card atualizados" id="atualizados">Atualizados: 0</div>
-  <div class="card total" id="total">Total: 0</div>
+    <div class="card gerados" id="gerados">Gerados: 0</div>
+    <div class="card atualizados" id="atualizados">Atualizados: 0</div>
+    <div class="card total" id="total">Total: 0</div>
 </div>
 
 <div id="qrcodes"></div>
 
 <script>
+  
 let familias = JSON.parse(localStorage.getItem('familias')) || [];
 let ultimaPlanilha = null;
+let conviteImg = new Image();
+conviteImg.src = "convite.png";  // coloque o nome da imagem aqui
 
 document.getElementById('excelFile').addEventListener('change', lerPlanilha);
 
 function lerPlanilha(event) {
-  const file = event.target.files[0];
-  if (!file) return alert("Selecione um arquivo Excel!");
-  ultimaPlanilha = file;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, { type: 'array' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(sheet);
-    atualizarLista(json);
-  };
-  reader.readAsArrayBuffer(file);
+    const file = event.target.files[0];
+    if (!file) return alert("Selecione um arquivo Excel!");
+
+    ultimaPlanilha = file;
+
+    const reader = new FileReader();
+    reader.onload = e => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+        atualizarLista(json);
+    };
+    reader.readAsArrayBuffer(file);
 }
 
 function atualizarLista(json) {
-  const antigas = new Map(familias.map(f => [f.id, f]));
-  let gerados = 0, atualizados = 0;
+    const antigas = new Map(familias.map(f => [f.id, f]));
+    let gerados = 0, atualizados = 0;
 
-  json.forEach(f => {
-    const id = f["Nome da Família"].replace(/\s+/g, '_').toUpperCase();
-    const existente = antigas.get(id);
+    json.forEach(f => {
+        const id = f["Nome da Família"].replace(/\s+/g, '_').toUpperCase();
+        const existente = antigas.get(id);
 
-    if (existente) {
-      existente.adultos = f["Adultos"] || existente.adultos;
-      existente.criancas = f["Crianças"] || existente.criancas;
-      atualizados++;
-    } else {
-      familias.push({
-        id,
-        nome: f["Nome da Família"],
-        adultos: f["Adultos"] || 0,
-        criancas: f["Crianças"] || 0,
-        entrou: false
-      });
-      gerados++;
-    }
-  });
+        if (existente) {
+            existente.adultos = f["Adultos"] || existente.adultos;
+            existente.criancas = f["Crianças"] || existente.criancas;
+            atualizados++;
+        } else {
+            familias.push({
+                id,
+                nome: f["Nome da Família"],
+                adultos: f["Adultos"] || 0,
+                criancas: f["Crianças"] || 0,
+                entrou: false
+            });
+            gerados++;
+        }
+    });
 
-  localStorage.setItem('familias', JSON.stringify(familias));
-  exibirQRCodes();
-  atualizarStatus(gerados, atualizados);
+    localStorage.setItem('familias', JSON.stringify(familias));
+    exibirQRCodes();
+    atualizarStatus(gerados, atualizados);
 }
 
 function atualizarSemArquivo() {
-  if (!ultimaPlanilha) return alert("Nenhuma planilha carregada ainda!");
-  lerPlanilha({ target: { files: [ultimaPlanilha] } });
+    if (!ultimaPlanilha) return alert("Nenhuma planilha carregada!");
+    lerPlanilha({ target: { files: [ultimaPlanilha] } });
 }
 
 function gerarQRCodes() {
-  const file = document.getElementById('excelFile').files[0];
-  if (!file) return alert("Selecione uma planilha para gerar QR Codes!");
-  lerPlanilha({ target: { files: [file] } });
+    const file = document.getElementById('excelFile').files[0];
+    if (!file) return alert("Selecione a planilha!");
+    lerPlanilha({ target: { files: [file] } });
 }
 
 function exibirQRCodes() {
-  const container = document.getElementById("qrcodes");
-  container.innerHTML = "";
-  familias.forEach(f => {
-    const div = document.createElement("div");
-    div.className = "qr-item";
+    const container = document.getElementById("qrcodes");
+    container.innerHTML = "";
+    familias.forEach(f => {
+        const div = document.createElement("div");
+        div.className = "qr-item";
 
-    const label = document.createElement("div");
-    label.innerHTML = `<strong>${f.nome}</strong><br>${f.adultos} adultos e ${f.criancas} crianças`;
-    div.appendChild(label);
+        const label = document.createElement("div");
+        label.innerHTML = `<strong>${f.nome}</strong><br>${f.adultos} adultos e ${f.criancas} crianças`;
+        div.appendChild(label);
 
-    const qrDiv = document.createElement("div");
-    new QRCode(qrDiv, { text: f.id, width: 128, height: 128 });
-    div.appendChild(qrDiv);
-    container.appendChild(div);
-  });
-  atualizarStatus(0, 0);
+        const qrDiv = document.createElement("div");
+        new QRCode(qrDiv, { text: f.id, width: 128, height: 128 });
+        div.appendChild(qrDiv);
+
+        container.appendChild(div);
+    });
+
+    atualizarStatus(0, 0);
 }
 
 function atualizarStatus(gerados, atualizados) {
-  document.getElementById("gerados").innerText = `Gerados: ${gerados}`;
-  document.getElementById("atualizados").innerText = `Atualizados: ${atualizados}`;
-  document.getElementById("total").innerText = `Total: ${familias.length}`;
+    document.getElementById("gerados").innerText = `Gerados: ${gerados}`;
+    document.getElementById("atualizados").innerText = `Atualizados: ${atualizados}`;
+    document.getElementById("total").innerText = `Total: ${familias.length}`;
 }
 
 function baixarJSON() {
-  if (!familias.length) return alert("Nenhum dado para salvar!");
-  const blob = new Blob([JSON.stringify(familias, null, 2)], { type: "application/json" });
-  saveAs(blob, "familias.json");
+    const blob = new Blob([JSON.stringify(familias, null, 2)], { type: "application/json" });
+    saveAs(blob, "familias.json");
 }
-
+  
 async function exportarJPEGs() {
-  if (!familias.length) return alert("Gere os QR Codes antes de exportar!");
-  const zip = new JSZip();
-  const qrDivs = document.querySelectorAll(".qr-item div canvas");
-  qrDivs.forEach((canvas, i) => {
-    const nome = familias[i].nome.replace(/\s+/g, '_');
-    const dataURL = canvas.toDataURL("image/jpeg");
-    const base64 = dataURL.split(",")[1];
-    zip.file(`${nome}.jpeg`, base64, { base64: true });
-  });
-  const blob = await zip.generateAsync({ type: "blob" });
-  saveAs(blob, "QRCodes_Festa.zip");
-  alert("📦 QR Codes exportados com sucesso!");
+    const zip = new JSZip();
+    const qrDivs = document.querySelectorAll(".qr-item div canvas");
+
+    qrDivs.forEach((canvas, i) => {
+        const nome = familias[i].nome.replace(/\s+/g, '_');
+        const dataURL = canvas.toDataURL("image/jpeg");
+        const base64 = dataURL.split(",")[1];
+        zip.file(`${nome}.jpeg`, base64, { base64: true });
+    });
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    saveAs(blob, "QRCodes.zip");
 }
 
 function recriarTodos() {
-  if (!confirm("Tem certeza que deseja recriar todos os QR Codes do zero?")) return;
-  localStorage.removeItem('familias');
-  familias = [];
-  document.getElementById("qrcodes").innerHTML = "";
-  atualizarStatus(0, 0);
-  alert("✅ Todos os QR Codes foram apagados. Importe a planilha novamente.");
+    if (!confirm("Recriar tudo do zero?")) return;
+    localStorage.removeItem('familias');
+    familias = [];
+    document.getElementById("qrcodes").innerHTML = "";
+    atualizarStatus(0, 0);
 }
 
-window.onload = exibirQRCodes;
+/* ----------------------
+    DETECÇÃO AUTOMÁTICA DA ÁREA BRANCA
+------------------------- */
+function detectarAreaBranca(img) {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+
+    const data = ctx.getImageData(0, 0, img.width, img.height);
+
+    let minX = img.width, minY = img.height;
+    let maxX = 0, maxY = 0;
+
+    for (let y = 0; y < img.height; y++) {
+        for (let x = 0; x < img.width; x++) {
+
+            const i = (y * img.width + x) * 4;
+            const r = data.data[i];
+            const g = data.data[i + 1];
+            const b = data.data[i + 2];
+
+            // Pixel branco detectado
+            if (r > 230 && g > 230 && b > 230) {
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+
+    return {
+        x: minX,
+        y: minY,
+        w: maxX - minX,
+        h: maxY - minY
+    };
+}
+
+/* ----------------------
+    EXPORTAR CONVITES COMPLETOS
+------------------------- */
+async function exportarConvites() {
+    if (!familias.length) return alert("Gere a lista antes!");
+
+    const zip = new JSZip();
+    const area = detectarAreaBranca(conviteImg);
+
+    const margem = 20; // margem interna solicitada
+
+    for (const f of familias) {
+
+        // QR CODE TEMPORÁRIO EM CANVAS
+        let qrCanvas = document.createElement("canvas");
+        new QRCode(qrCanvas, { text: f.id, width: area.w - margem*2, height: area.h - margem*2 });
+        qrCanvas = qrCanvas.querySelector("canvas");
+
+        // CANVAS FINAL
+        const canvas = document.createElement("canvas");
+        canvas.width = conviteImg.width;
+        canvas.height = conviteImg.height;
+        const ctx = canvas.getContext("2d");
+
+        // FUNDO DO CONVITE
+        ctx.drawImage(conviteImg, 0, 0);
+
+        // NOME CENTRALIZADO
+        ctx.font = "bold 48px Arial";
+        ctx.fillStyle = "#000";
+        ctx.textAlign = "center";
+        ctx.fillText(f.nome, area.x + area.w/2, area.y - 20);
+
+        // QR CODE COM MARGEM
+        ctx.drawImage(qrCanvas, area.x + margem, area.y + margem);
+
+        const dataURL = canvas.toDataURL("image/jpeg");
+        const base64 = dataURL.split(",")[1];
+
+        zip.file(`${f.nome.replace(/\s+/g, "_")}.jpeg`, base64, { base64: true });
+    }
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    saveAs(blob, "Convites_QR.zip");
+}
+
+window.onload = () => exibirQRCodes();
 </script>
 </body>
 </html>
